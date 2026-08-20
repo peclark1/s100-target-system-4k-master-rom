@@ -17,3 +17,12 @@ jobs:
         run: make verify
       - name: Show output files
         run: ls -l build/
+      - name: Upload ROM build
+        uses: actions/upload-artifact@v4
+        with:
+          name: imsai-target-monitor-v0.1
+          path: |
+            build/IMSAI_TARGET_MONITOR_4K.bin
+            build/IMSAI_TARGET_MONITOR_28C64.bin
+            build/monitor.raw.bin
+            build/monitor.sym
