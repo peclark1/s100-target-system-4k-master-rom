@@ -145,6 +145,8 @@ A successful build creates:
 - `build/monitor.raw.bin` - assembled monitor body before padding/CDBL insertion
 - `build/monitor.sym` - Pasmo symbol table
 
+The GitHub Actions workflow also publishes those four files as the `imsai-target-monitor-v0.1` build artifact for each successful PR build.
+
 The build fails if monitor code crosses into the fixed CDBL region at `FF00H`, if CDBL is not exactly 256 bytes, or if either final ROM image has the wrong structure/size.
 
 The first successful GitHub Actions build produced:
