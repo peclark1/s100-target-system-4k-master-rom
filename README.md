@@ -35,7 +35,19 @@ Future additions may include the Digital Systems disk subsystem, Polymorphic VTI
 
 The monitor therefore has 3840 bytes available before the fixed 256-byte CDBL image.
 
-Because the FDC+ full-64K modification is installed, the PROM switch page used for this target must make RAM end at `EFFFH` and PROM begin at `F000H`. The build will also generate an 8K programmer image for the physical 27C64/28C64 socket, with the logical `F000H-FFFFH` image placed in the correct half of the device.
+The current v0.1 source assembles to **1993 bytes**, leaving **1847 bytes free** before CDBL. The build checks this limit automatically.
+
+### FDC+ Rev B target configuration
+
+This project assumes the existing FDC+ full-64K modification remains installed. With that modification, the PROM page switch specifies the **last RAM page**, and PROM starts on the following 256-byte page. For the target map:
+
+- RAM start: `0000H`
+- RAM end: `EFFFH`
+- PROM start: `F000H`
+- PROM page address switches `A12..A8`: `0 1 1 1 1` (page `EFH`)
+- PROM enable: enabled
+
+At CPU address `F000H`, A12 is high, so the logical 4K ROM occupies the **upper 4K half** of the physical 27C64/28C64. `tools/build_image.py` therefore creates an 8K programmer image with the lower 4K filled with `FFH` and the complete logical monitor in the upper 4K.
 
 ## IMSAI front-panel console selection
 
@@ -52,15 +64,17 @@ Switches 09 and 08 select the monitor console:
 
 The reserved state is intentionally available for a future fourth console such as the Polymorphic VTI.
 
-The monitor will expose three generic console primitives and keep board-specific code behind them:
+The monitor exposes three generic console primitives and keeps board-specific code behind them:
 
 - `CONST` - character available?
 - `CONIN` - read a character
 - `CONOUT` - write a character
 
+Only Serial I/O Port A requires software initialization. The MIO SIO is configured by the board's hardware options and is designed to require no serial initialization at power-up.
+
 ## First-build monitor features
 
-Planned initial command set:
+Implemented initial command set:
 
 - `B` - boot menu
 - `C` - boot Altair FDC+ using CDBL
@@ -68,7 +82,7 @@ Planned initial command set:
 - `F` - fill memory
 - `G` - go to address
 - `H` - hardware / front-panel status
-- `J` - RAM test
+- `J` - non-destructive RAM test
 - `K` - command menu
 - `M` - move memory
 - `P` - boot CP/M from IDE/CF
@@ -76,21 +90,21 @@ Planned initial command set:
 - `T` - type memory as ASCII
 - `V` - verify/compare memory
 
-`Ctrl-C` will immediately boot the configured IDE/CF device.
+`Ctrl-C` immediately boots the configured IDE/CF device.
 
-On reset the monitor will:
+On reset the monitor:
 
-1. enter at `F000H` through the North Star auto-jump feature;
-2. read the IMSAI front-panel byte from `FFH`;
-3. select and initialize the requested console;
-4. initialize the Dual IDE/CF interface;
-5. display a compact IMSAI banner and hardware status;
-6. perform a short cancelable IDE/CF auto-boot countdown;
-7. enter the monitor if a key is pressed.
+1. enters at `F000H` through the North Star auto-jump feature;
+2. reads the IMSAI front-panel byte from `FFH`;
+3. selects the requested console and initializes it if required;
+4. initializes the Dual IDE/CF interface;
+5. displays a compact IMSAI banner and hardware status;
+6. performs a short cancelable IDE/CF auto-boot countdown;
+7. enters the monitor if a key is pressed.
 
 ## Deliberately excluded from v0.1
 
-To keep the ROM small and target-specific, the first build will not contain:
+To keep the ROM small and target-specific, the first build does not contain:
 
 - Z80 CPU V2 ROM banking / port `D3H` support
 - duplicate high/low ROM pages
@@ -107,18 +121,39 @@ To keep the ROM small and target-specific, the first build will not contain:
 - Digital Systems disk support
 - Polymorphic VTI support
 
-These can be reconsidered later if ROM space remains.
+These can be reconsidered later if useful; the current build has substantial ROM space remaining.
 
-## Build goals
+## Building on Ubuntu
 
-The repository will build from Z80 source and produce at least:
+Install the assembler once:
 
-- `IMSAI_TARGET_MONITOR_4K.bin` - exactly 4096 bytes, logical `F000H-FFFFH`
-- `IMSAI_TARGET_MONITOR_28C64.bin` - exactly 8192 bytes, ready for the FDC+ 27C64/28C64 socket
-- listing / symbol output when supported by the selected assembler
+```sh
+sudo apt update
+sudo apt install pasmo
+```
 
-The build must fail if monitor code crosses into the fixed CDBL region at `FF00H` or if either final image has the wrong size.
+Then clone/pull the repository and build:
+
+```sh
+make verify
+```
+
+A successful build creates:
+
+- `build/IMSAI_TARGET_MONITOR_4K.bin` - exactly 4096 bytes, logical `F000H-FFFFH`
+- `build/IMSAI_TARGET_MONITOR_28C64.bin` - exactly 8192 bytes, ready for the FDC+ 27C64/28C64 socket
+- `build/monitor.raw.bin` - assembled monitor body before padding/CDBL insertion
+- `build/monitor.sym` - Pasmo symbol table
+
+The build fails if monitor code crosses into the fixed CDBL region at `FF00H`, if CDBL is not exactly 256 bytes, or if either final ROM image has the wrong structure/size.
+
+The first successful GitHub Actions build produced:
+
+- monitor body: `1993 / 3840` bytes
+- free before CDBL: `1847` bytes
+- 4K SHA-256: `50edb2a1bfceb5fc19b782550c9dbacefd75629a773200bb88f6ee8eab26724c`
+- 8K SHA-256: `1473d9295a72b156ced08d68aa026537eb48888ccb6efbcdea1e19b95548c696`
 
 ## Development approach
 
-GitHub is the source of truth from the beginning. Development will proceed in small, reviewable commits with reproducible local builds on Ubuntu.
+GitHub is the source of truth from the beginning. Development proceeds in small, reviewable commits with reproducible local builds on Ubuntu. Hardware-test candidates are developed on a branch/PR and are not merged to `main` until reviewed and bench-tested.
