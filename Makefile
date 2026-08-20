@@ -1,4 +1,4 @@
-AS ?= pasmo
+Z80_AS ?= pasmo
 PYTHON ?= python3
 BUILD_DIR := build
 SRC := src/monitor4k.asm
@@ -15,7 +15,7 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 $(RAW): $(SRC) | $(BUILD_DIR)
-	$(AS) --bin $(SRC) $(RAW) $(SYM)
+	$(Z80_AS) --bin $(SRC) $(RAW) $(SYM)
 
 $(ROM4K) $(ROM8K): $(RAW) third_party/CDBL.HEX tools/build_image.py
 	$(PYTHON) tools/build_image.py --monitor $(RAW) --cdbl third_party/CDBL.HEX --outdir $(BUILD_DIR)
