@@ -1,9 +1,8 @@
 name: Build ROM
 
 on:
-  push:
-    branches: [ main, monitor-v0.1 ]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   build:
