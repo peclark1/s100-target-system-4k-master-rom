@@ -281,8 +281,8 @@ SCC_A_INIT:
 MIO_CONST:
         IN      A,(MIO_STATUS)
         AND     MIO_RX_READY
-        JR      Z,CONST_NONE
-        JR      CONST_YES
+        JP      Z,CONST_NONE
+        JP      CONST_YES
 
 MIO_IN:
         CALL    MIO_CONST
