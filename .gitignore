@@ -1,0 +1,7 @@
+build/
+*.lst
+*.sym
+*.bin
+*.hex
+__pycache__/
+*.pyc
