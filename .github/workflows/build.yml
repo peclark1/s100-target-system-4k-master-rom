@@ -1,0 +1,20 @@
+name: Build ROM
+
+on:
+  push:
+    branches: [ main, monitor-v0.1 ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Z80 assembler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pasmo
+      - name: Build and verify ROM images
+        run: make verify
+      - name: Show output files
+        run: ls -l build/
