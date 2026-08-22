@@ -6,7 +6,7 @@ assembled separately at F800H.  This script combines the two into the logical
 4K ROM image and emits the physical 8K 27C64/28C64 programmer image used by the
 modified Altair FDC+.
 
-The monitor source now contains the native FDC+3712 jump and display strings
+The monitor source contains the native FDC+3712 jump and display strings
 directly; no assembled-binary patching is performed here.
 """
 
