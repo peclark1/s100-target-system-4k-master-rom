@@ -10,8 +10,9 @@
 ; 3712BOOT/3712SVC path in peclark1/altair-fdcplus-software and from Mike
 ; Douglas's PROM.ASM/BOOT.ASM programming model.
 ;
-; First ROM milestone is intentionally READ ONLY.  The CP/M BIOS WRITE entry
-; returns error without issuing an FDC+ write command.
+; Sector read and write services use the FDC+ Drive Type 8 / FD3712 command
+; protocol.  The write-buffer, write-sector, and optional CRC-verify sequence
+; follows Mike Douglas's PROM.ASM, with explicit write-protect detection added.
 ;
 ; Console BIOS entries are patched in RAM to use the master ROM's public
 ; console primitives, so SW09/SW08 console selection continues into CP/M.
@@ -35,6 +36,8 @@ LOADLEN         EQU     LOADEND-CCPBASE
 
 IOBYTE          EQU     0003H
 CDISK           EQU     0004H
+MODELOC         EQU     0033H          ; MODE byte offset from BIOSBASE
+F_WRTVFY        EQU     040H           ; MODE bit: verify writes with READ CRC
 
 ; Page-zero work area used by Mike Douglas's PROM
 DRVNUM          EQU     0040H
@@ -46,12 +49,15 @@ BIOSADR         EQU     0046H
 
 ; FDC+3712 commands
 C_READ          EQU     03H
+C_WRITE         EQU     05H
+C_RDCRC         EQU     07H
 C_SEEK          EQU     09H
 C_CLRERR        EQU     0BH
 C_RESTORE       EQU     0DH
 C_SETTRK        EQU     11H
 C_LDCFG         EQU     15H
 C_DRVSEC        EQU     21H
+C_WRTBUF        EQU     31H
 C_RDBUF         EQU     40H
 C_SHIFT         EQU     41H
 C_RESET         EQU     81H
@@ -59,6 +65,7 @@ C_RESET         EQU     81H
 S_BUSY          EQU     01H
 S_SKERR         EQU     02H
 S_CRCERR        EQU     08H
+S_WRTPRT        EQU     10H
 S_NOTRDY        EQU     20H
 
 CMDOUT          EQU     08H
@@ -228,7 +235,7 @@ PATCH_BIOS:
 
         LD      A,0C3H
         LD      (0BC2AH),A
-        LD      HL,WRITE_RO
+        LD      HL,WRITE
         LD      (0BC2BH),HL
 
         LD      A,0C3H
@@ -414,8 +421,56 @@ READ_BUFFER_LOOP:
         OUT     (CMDOUT),A
         RET
 
-; First native-ROM milestone is intentionally read-only.
-WRITE_RO:
+; Write one 128-byte CP/M sector.  This follows Mike Douglas's PROM.ASM
+; sequence: select/seek, load the controller write buffer byte-by-byte, issue
+; WRITE, and optionally verify the recorded sector CRC if MODE bit 6 is set.
+WRITE:
+        CALL    SELECT_SEEK
+        JP      NZ,ERR_EXIT
+
+        LD      HL,(DMAADDR)
+        LD      C,SECLEN
+WRITE_BUFFER_LOOP:
+        LD      A,(HL)
+        OUT     (DATAOUT),A
+
+        LD      A,C_WRTBUF
+        OUT     (CMDOUT),A
+        XOR     A
+        OUT     (CMDOUT),A
+
+        INC     HL
+        DEC     C
+        JR      NZ,WRITE_BUFFER_LOOP
+
+        LD      C,10
+WRITE_RETRY:
+        LD      A,C_WRITE
+        CALL    DO_CMD
+        AND     S_NOTRDY+S_WRTPRT
+        JR      Z,WRITE_CHECK_CRC
+
+        CALL    CLR_ERRORS
+        JP      ERR_EXIT
+
+WRITE_CHECK_CRC:
+        LD      HL,(BIOSADR)
+        LD      DE,MODELOC
+        ADD     HL,DE
+        LD      A,(HL)
+        AND     F_WRTVFY
+        RET     Z
+
+        LD      A,C_RDCRC
+        CALL    DO_CMD
+        AND     S_NOTRDY+S_CRCERR
+        RET     Z
+
+        CALL    CLR_ERRORS
+        DEC     C
+        JR      NZ,WRITE_RETRY
+        JP      ERR_EXIT
+
 ERR_EXIT:
         LD      A,1
         OR      A
@@ -535,7 +590,7 @@ PRINT_Z:
 MSG_COLD:
         DB      0DH,0AH
         DB      '48K CP/M 2.2 - FDC+3712 / IMSAI',0DH,0AH
-        DB      'ROM console selection active; disk writes disabled.',0DH,0AH,0
+        DB      'ROM console selection active; disk read/write enabled.',0DH,0AH,0
 MSG_READ_FAIL:
         DB      0DH,0AH,'FDC+3712 READ/SEEK ERROR',0DH,0AH,0
 MSG_BAD_IMAGE:
