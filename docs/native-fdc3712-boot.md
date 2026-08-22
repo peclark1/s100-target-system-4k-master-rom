@@ -43,26 +43,27 @@ The write sequence follows Mike Douglas's F400 PROM implementation:
 
 The ROM additionally treats the FD3712 write-protect status bit (`10H`) as a write error. CP/M receives `A=0` for success and nonzero for failure, matching the BIOS contract.
 
-## Build layout
+## Final 4K layout
 
-- `F000H-F7FFH`: monitor body
-- `F800H-...`: native FDC+3712 module
-- remainder through `FFFFH`: erased/padding
+The CDBL reservation is gone. The ROM is now assembled as three source-level modules:
 
-The physical 28C64 programmer image is unchanged in overall arrangement: the lower physical 4K is `FFH`, and the complete logical `F000H-FFFFH` image occupies the upper physical 4K.
+- `F000H-F7FFH`: compact monitor core
+- `F800H-FB91H`: native FDC+3712 module
+- `FB92H-FB9FH`: reserved gap
+- `FBA0H-...`: monitor extension
+- remaining bytes through `FFFFH`: erased/padding
 
-The native boot hook is source-level code in `src/monitor4k.asm`: `FDC_BOOT` jumps directly to `F800H`, and the monitor strings identify the 3712 module directly. `tools/build_image.py` no longer patches the assembled monitor binary; it only verifies the layout and combines the monitor and FDC+3712 module.
+The monitor extension restores the aligned IMSAI 8080 front-panel sign-on graphic and adds the `A`, `E`, `S`, and `Z` commands. The core dispatches those commands through fixed entry `FBA0H` and calls the extension header through `FBA3H`.
 
-The cleaned source build is byte-for-byte identical to the physically tested pre-cleanup ROM image:
+The `A` memory-map command uses John's RAM/PROM/empty-page idea but is made safer for this EEPROM-based target: it never performs a write probe in the fixed `F000H-FFFFH` ROM window. Below `F000H` it uses a nondestructive complement/restore RAM test; non-writable pages are scanned for non-`FFH` data.
 
-- 4K SHA-256: `532ba8a7c68d0087746cb6cb5848fc30875d4c737ee089cb264527f8135cac7e`
-- 8K SHA-256: `3665eec485fe167ba67173a097efaebdad1f51ba6f59e9b2724c5fc1357c1099`
+The physical 28C64 programmer image remains unchanged in overall arrangement: the lower physical 4K is `FFH`, and the complete logical `F000H-FFFFH` image occupies the upper physical 4K.
 
-## Physical bench validation
+## Physical bench validation to date
 
-The native ROM path, including writes, has now been validated on the physical IMSAI with the FDC+ firmware 1.8 Drive Type 8 configuration and SA800-class drives.
+The native ROM path, including writes, has been validated on the physical IMSAI with the FDC+ firmware 1.8 Drive Type 8 configuration and SA800-class drives.
 
-Verified behavior:
+Verified behavior before the final monitor-extension build:
 
 - native ROM cold boot reaches 48K CP/M 2.2 and the `A>` prompt;
 - `DIR` succeeds from the boot disk;
@@ -71,10 +72,8 @@ Verified behavior:
 - a Digital Systems single-density CP/M disk placed in physical drive B is readable through the same FDC+3712 BIOS path;
 - CP/M successfully copied a file from B: to A:, simultaneously exercising drive-B selection/read and drive-A allocation/directory/data writes.
 
-This cross-drive copy is strong end-to-end validation of the drive-select, seek, read, write-buffer, write-sector, directory-update, and CP/M BIOS integration paths. It also confirms useful media compatibility with the archived Digital Systems single-density disk format used in this IMSAI project.
+The final monitor-extension image still needs one physical smoke test for the new header, `D` hex+ASCII display, delimiter echo, and `A/E/S/Z` commands. The FDC module itself is unchanged from the previously proven 914-byte implementation.
 
-A write-protect rejection test is still recommended as a final error-path check.
-
-For the final post-cleanup smoke test, pull the branch, run `make clean && make verify`, confirm the two hashes above, burn `build/IMSAI_TARGET_MONITOR_28C64.bin`, boot with `C`, run `DIR`, and perform one small read/write operation. Because the hashes are unchanged, this is a regression smoke test of the source cleanup rather than a new ROM design.
+A write-protect rejection test is still recommended as a final FDC error-path check.
 
 On read/seek failure the ROM prints `FDC+3712 READ/SEEK ERROR` and returns to the monitor. If the 51-sector boot image does not match the validated system, it prints `FDC+3712 SYSTEM IMAGE CHECKSUM ERROR` and returns to the monitor.
