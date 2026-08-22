@@ -32,7 +32,7 @@ The BIOS default IOBYTE value `95H` is still initialized at page-zero location `
 
 ## Read/write support
 
-The CP/M BIOS READ and WRITE entries now use native FDC+3712 ROM services.
+The CP/M BIOS READ and WRITE entries use native FDC+3712 ROM services.
 
 The write sequence follows Mike Douglas's F400 PROM implementation:
 
@@ -51,21 +51,23 @@ The ROM additionally treats the FD3712 write-protect status bit (`10H`) as a wri
 
 The physical 28C64 programmer image is unchanged in overall arrangement: the lower physical 4K is `FFH`, and the complete logical `F000H-FFFFH` image occupies the upper physical 4K.
 
-For the first hardware-validation branch, `tools/build_image.py` assertion-patches the legacy monitor's assembled `JP FF00H` hook to `JP F800H` and changes the two CDBL display labels to 3712 labels. After bench validation, these three small changes should be folded directly into `src/monitor4k.asm`.
+For the hardware-validation branch, `tools/build_image.py` still assertion-patches the legacy monitor's assembled `JP FF00H` hook to `JP F800H` and changes the two CDBL text labels to 3712 labels. After the validated native path is folded directly into `src/monitor4k.asm`, this transitional patching will be removed.
 
-## Bench validation
+## Physical bench validation
 
-Native ROM cold boot and `DIR` have already passed on the physical IMSAI with the validated 48K CP/M 2.2 disk.
+The native ROM path has now been validated on the physical IMSAI with the FDC+ firmware 1.8 Drive Type 8 configuration and SA800-class drives.
 
-For the first write validation, use a scratch/duplicate floppy rather than the reference disk:
+Verified behavior:
 
-1. Pull `feature/fdc3712-native-boot` and run `make clean && make verify`.
-2. Burn `build/IMSAI_TARGET_MONITOR_28C64.bin` to the target ROM device.
-3. Boot the scratch copy with `C` from the monitor.
-4. Create a small file with `PIP WTEST.TXT=CON:`; type a short line and terminate input with Ctrl-Z.
-5. Run `DIR` and `TYPE WTEST.TXT`.
-6. Warm boot with Ctrl-C, then repeat `DIR` and `TYPE WTEST.TXT` to prove the directory and data survived a reload.
-7. Power-cycle and repeat the readback for persistence.
-8. As a separate safety test, write-protect the scratch disk and confirm a write is rejected rather than silently accepted.
+- native ROM cold boot reaches 48K CP/M 2.2 and the `A>` prompt;
+- `DIR` succeeds from the boot disk;
+- CP/M file creation and writeback on drive A succeed;
+- the written file can be read back correctly;
+- a Digital Systems single-density CP/M disk in physical drive B is readable through the same FDC+3712 BIOS path;
+- CP/M successfully copied a file from B: to A:, simultaneously exercising drive-B selection/read and drive-A allocation/directory/data writes.
+
+This cross-drive copy is strong end-to-end validation of the drive-select, seek, read, write-buffer, write-sector, directory-update, and CP/M BIOS integration paths.
+
+A write-protect rejection test is still recommended before declaring the write path final.
 
 On read/seek failure the ROM prints `FDC+3712 READ/SEEK ERROR` and returns to the monitor. If the 51-sector boot image does not match the validated system, it prints `FDC+3712 SYSTEM IMAGE CHECKSUM ERROR` and returns to the monitor.
