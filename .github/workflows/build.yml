@@ -20,9 +20,11 @@ jobs:
       - name: Upload ROM build
         uses: actions/upload-artifact@v4
         with:
-          name: imsai-target-monitor-v0.1
+          name: imsai-target-monitor-native-fdc3712
           path: |
             build/IMSAI_TARGET_MONITOR_4K.bin
             build/IMSAI_TARGET_MONITOR_28C64.bin
             build/monitor.raw.bin
             build/monitor.sym
+            build/fdc3712rom.bin
+            build/fdc3712rom.sym
