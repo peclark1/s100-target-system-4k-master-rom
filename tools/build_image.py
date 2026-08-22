@@ -6,17 +6,8 @@ assembled separately at F800H.  This script combines the two into the logical
 4K ROM image and emits the physical 8K 27C64/28C64 programmer image used by the
 modified Altair FDC+.
 
-The current monitor source still contains the former CDBL jump hook and two
-human-readable CDBL labels.  For this first hardware-validation branch, the
-builder changes only those exact bytes in the assembled monitor image:
-
-  JP FF00H              -> JP F800H
-  "WITH CDBL"           -> "WITH 3712"
-  "CDBL FF00H"          -> "3712 F800H"
-
-Each replacement is assertion-checked and must occur exactly once.  Once the
-native boot path is bench-proven, these small source-level cleanups can be
-folded directly into monitor4k.asm without changing the binary design.
+The monitor source now contains the native FDC+3712 jump and display strings
+directly; no assembled-binary patching is performed here.
 """
 
 from __future__ import annotations
@@ -36,16 +27,7 @@ ROM4K_NAME = "IMSAI_TARGET_MONITOR_4K.bin"
 ROM8K_NAME = "IMSAI_TARGET_MONITOR_28C64.bin"
 
 
-def replace_once(data: bytes, old: bytes, new: bytes, description: str) -> bytes:
-    if len(old) != len(new):
-        raise ValueError(f"{description}: replacement length mismatch")
-    count = data.count(old)
-    if count != 1:
-        raise ValueError(f"{description}: expected exactly one match, found {count}")
-    return data.replace(old, new, 1)
-
-
-def patch_monitor(monitor: bytes) -> bytes:
+def build_images(monitor: bytes, fdc_module: bytes) -> tuple[bytes, bytes]:
     if not monitor:
         raise ValueError("assembler monitor output is empty")
     if len(monitor) > FDC_OFFSET:
@@ -53,21 +35,6 @@ def patch_monitor(monitor: bytes) -> bytes:
             f"monitor is {len(monitor)} bytes and crosses native FDC module "
             f"address {FDC_ADDR:04X}H; maximum is {FDC_OFFSET} bytes"
         )
-
-    patched = monitor
-    patched = replace_once(
-        patched,
-        bytes((0xC3, 0x00, 0xFF)),
-        bytes((0xC3, 0x00, 0xF8)),
-        "legacy CDBL boot jump",
-    )
-    patched = replace_once(patched, b"WITH CDBL", b"WITH 3712", "FDC boot banner")
-    patched = replace_once(patched, b"CDBL FF00H", b"3712 F800H", "hardware banner")
-    return patched
-
-
-def build_images(monitor: bytes, fdc_module: bytes) -> tuple[bytes, bytes]:
-    monitor = patch_monitor(monitor)
 
     if not fdc_module:
         raise ValueError("FDC+3712 module is empty")
@@ -93,13 +60,13 @@ def verify(logical: bytes, device: bytes, monitor: bytes, fdc_module: bytes) -> 
     assert device[:0x1000] == bytes([ERASED]) * 0x1000
     assert device[0x1000:] == logical
 
-    patched_monitor = patch_monitor(monitor)
-    assert logical[: len(patched_monitor)] == patched_monitor
+    assert logical[: len(monitor)] == monitor
     assert logical[FDC_OFFSET : FDC_OFFSET + len(fdc_module)] == fdc_module
 
-    # Public cold entry remains at F000H and the native hook is a JP F800H.
+    # Public cold entry remains at F000H and the monitor directly jumps to
+    # the native FDC+3712 module at F800H.
     assert logical[0] == 0xC3
-    assert bytes((0xC3, 0x00, 0xF8)) in logical[:FDC_OFFSET]
+    assert bytes((0xC3, 0x00, 0xF8)) in monitor
 
 
 def sha256(data: bytes) -> str:
