@@ -153,8 +153,6 @@ MONITOR_GET_CMD:
         JP      Z,IDE_BOOT
         CP      'Q'
         JP      Z,CMD_IO
-        CP      'T'
-        JP      Z,CMD_TYPE
         CP      'V'
         JP      Z,CMD_VERIFY
 
@@ -356,8 +354,8 @@ TO_UPPER:
         AND     5FH
         RET
 
-; Read a hexadecimal value (1-4 digits) from the console.  Spaces and commas
-; are skipped before the first digit.  The terminating delimiter is consumed.
+; Read a hexadecimal value (1-4 digits) from the console. Spaces and commas
+; are valid separators and are echoed as typed. CR terminates the final value.
 ; Returns HL=value.
 GET_HEX16:
         LD      HL,0
@@ -369,9 +367,9 @@ GET_HEX_CHAR:
         CALL    TO_UPPER
 
         CP      SPACE
-        JR      Z,GET_HEX_DELIM
+        JR      Z,GET_HEX_DELIM_ECHO
         CP      ','
-        JR      Z,GET_HEX_DELIM
+        JR      Z,GET_HEX_DELIM_ECHO
         CP      CR
         JR      Z,GET_HEX_DELIM
 
@@ -392,10 +390,14 @@ GET_HEX_CHAR:
         INC     B
         JR      GET_HEX_CHAR
 
+GET_HEX_DELIM_ECHO:
+        PUSH    AF
+        CALL    CONOUT
+        POP     AF
 GET_HEX_DELIM:
         LD      A,B
         OR      A
-        JR      Z,GET_HEX_CHAR          ; no digits yet: keep skipping delimiters
+        JR      Z,GET_HEX_CHAR          ; no digits yet: keep accepting separators
         RET
 
 HEX_VALUE:                              ; ASCII A -> nibble A, carry on error
@@ -480,24 +482,64 @@ HW_CON_PRINT:
         CALL    PRINT_STR
         JP      MONITOR_LOOP
 
-CMD_DISPLAY:                            ; D start,end
+; D start,end - 16-byte rows with hexadecimal bytes and printable ASCII.
+; Like John's original monitor, the requested range is rounded to complete
+; 16-byte display lines so the ASCII column remains aligned.
+CMD_DISPLAY:
         CALL    GET_TWO
-DISP_LOOP:
         LD      A,L
-        AND     0FH
-        JR      NZ,DISP_BYTE
+        AND     0F0H
+        LD      L,A                     ; first display row
+        LD      A,E
+        AND     0F0H
+        LD      E,A                     ; last display row
+
+DISP_ROW:
         CALL    PRINT_CRLF
         CALL    PRINT_HEX16
         LD      A,':'
         CALL    CONOUT
-DISP_BYTE:
+
+        PUSH    HL                      ; save row start for ASCII pass
+        LD      B,16
+DISP_HEX_LOOP:
         CALL    PRINT_SPACE
         LD      A,(HL)
         CALL    PRINT_HEX8
-        CALL    RANGE_AT_END
-        JP      Z,MONITOR_LOOP
         INC     HL
-        JR      DISP_LOOP
+        DJNZ    DISP_HEX_LOOP
+
+        CALL    PRINT_SPACE
+        CALL    PRINT_SPACE
+        LD      A,'|'
+        CALL    CONOUT
+
+        EX      (SP),HL                 ; HL=row start, stack=next row
+        LD      B,16
+DISP_ASCII_LOOP:
+        LD      A,(HL)
+        CP      SPACE
+        JR      C,DISP_ASCII_DOT
+        CP      7FH
+        JR      C,DISP_ASCII_OUT
+DISP_ASCII_DOT:
+        LD      A,'.'
+DISP_ASCII_OUT:
+        CALL    CONOUT
+        INC     HL
+        DJNZ    DISP_ASCII_LOOP
+
+        LD      A,'|'
+        CALL    CONOUT
+        POP     HL                      ; next row address
+
+        PUSH    HL
+        OR      A                       ; clear carry
+        SBC     HL,DE                   ; another row if next row <= last row
+        POP     HL
+        JR      C,DISP_ROW
+        JR      Z,DISP_ROW
+        JP      MONITOR_LOOP
 
 CMD_FILL:                               ; F start,end,value
         CALL    GET_THREE
@@ -555,24 +597,6 @@ MOVE_LOOP:
         INC     BC
         JR      MOVE_LOOP
 
-CMD_TYPE:                               ; T start,end
-        CALL    GET_TWO
-TYPE_LOOP:
-        LD      A,(HL)
-        AND     7FH
-        CP      SPACE
-        JR      C,TYPE_DOT
-        CP      7FH
-        JR      C,TYPE_GO
-TYPE_DOT:
-        LD      A,'.'
-TYPE_GO:
-        CALL    CONOUT
-        CALL    RANGE_AT_END
-        JP      Z,MONITOR_LOOP
-        INC     HL
-        JR      TYPE_LOOP
-
 CMD_VERIFY:                             ; V start,end,destination
         CALL    GET_THREE
 VERIFY_LOOP:
@@ -603,9 +627,9 @@ IO_GET_MODE:
         CALL    CONIN
         CALL    TO_UPPER
         CP      SPACE
-        JR      Z,IO_GET_MODE
+        JR      Z,IO_MODE_DELIM
         CP      ','
-        JR      Z,IO_GET_MODE
+        JR      Z,IO_MODE_DELIM
         PUSH    AF
         CALL    CONOUT
         POP     AF
@@ -616,6 +640,9 @@ IO_GET_MODE:
         LD      HL,MSG_ERROR
         CALL    PRINT_STR
         JP      MONITOR_LOOP
+IO_MODE_DELIM:
+        CALL    CONOUT                  ; show the separator instead of hiding it
+        JR      IO_GET_MODE
 IO_INPUT:
         CALL    GET_HEX16
         LD      C,L
@@ -922,8 +949,9 @@ MSG_MISMATCH:
 MSG_MENU1:
         DB      'B=Boot C=FDC+ D=Display F=Fill G=Goto H=Hardware J=RAMtest',CR,LF,0
 MSG_MENU2:
-        DB      'K=Menu M=Move P=IDE/CF Q=I/O T=Type V=Verify',CR,LF
-        DB      'Syntax: D/F/J/T start,end  M/V start,end,dest  Q I,port  Q O,port,byte',0
+        DB      'K=Menu M=Move P=IDE/CF Q=I/O V=Verify',CR,LF
+        DB      'Syntax: SPACE or comma separates values; D/F/J start,end  M/V start,end,dest',CR,LF
+        DB      'Q I,port  Q O,port,byte',0
 
 MSG_BOOT_MENU:
         DB      'BOOT: [I] IDE/CF  [F] ALTAIR FDC+  [M] MONITOR : ',0
