@@ -45,13 +45,13 @@ The ROM additionally treats the FD3712 write-protect status bit (`10H`) as a wri
 
 ## Build layout
 
-- `F000H-F7FFH`: existing monitor (currently 1993 bytes, 55 bytes spare before `F800H`)
+- `F000H-F7FFH`: monitor body
 - `F800H-...`: native FDC+3712 module
 - remainder through `FFFFH`: erased/padding
 
 The physical 28C64 programmer image is unchanged in overall arrangement: the lower physical 4K is `FFH`, and the complete logical `F000H-FFFFH` image occupies the upper physical 4K.
 
-For the hardware-validation branch, `tools/build_image.py` still assertion-patches the legacy monitor's assembled `JP FF00H` hook to `JP F800H` and changes the two CDBL text labels to 3712 labels. After the validated native path is folded directly into `src/monitor4k.asm`, this transitional patching will be removed.
+The native boot hook is now source-level code in `src/monitor4k.asm`: `FDC_BOOT` jumps directly to `F800H`, and the monitor strings identify the 3712 module directly. `tools/build_image.py` no longer patches the assembled monitor binary; it only verifies the layout and combines the monitor and FDC+3712 module. The cleaned build is expected to remain byte-for-byte identical to the physically tested pre-cleanup image.
 
 ## Physical bench validation
 
@@ -68,6 +68,6 @@ Verified behavior:
 
 This cross-drive copy is strong end-to-end validation of the drive-select, seek, read, write-buffer, write-sector, directory-update, and CP/M BIOS integration paths. It also confirms useful media compatibility with the archived Digital Systems single-density disk format used in this IMSAI project.
 
-A write-protect rejection test is still recommended as a final error-path check.
+A write-protect rejection test is still recommended as a final error-path check. After the source cleanup, perform one final ROM smoke test before merging the branch.
 
 On read/seek failure the ROM prints `FDC+3712 READ/SEEK ERROR` and returns to the monitor. If the 51-sector boot image does not match the validated system, it prints `FDC+3712 SYSTEM IMAGE CHECKSUM ERROR` and returns to the monitor.
