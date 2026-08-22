@@ -9,8 +9,8 @@
 ;   Serial I/O V3 channel A at A1H/A3H
 ;   IMSAI MIO SIO at 42H/43H
 ;
-; Assemble with Pasmo.  The native FDC+3712 boot module is assembled
-; separately at F800H, so this source MUST remain below F800H.
+; Assemble with Pasmo.  The native FDC+3712 boot module is assembled at F800H
+; and the monitor extension at FBA0H, so this source MUST remain below F800H.
 ;=============================================================================
 
         ORG     0F000H
@@ -74,6 +74,10 @@ IDE_CMD_READ    EQU     020H
 
 CPMLDR_ADDR     EQU     0100H
 CPMLDR_SECTORS  EQU     12              ; proven V5.6 target setting
+
+; Monitor extension fixed entry points.
+EXT_DISPATCH    EQU     0FBA0H
+EXT_HEADER      EQU     0FBA3H
 
 ; Monitor-private RAM.  The physical FDC+ RAM still extends through EFFFH.
 ; Keep the stack/work bytes away from the CP/M loader at 0100H.
@@ -156,9 +160,7 @@ MONITOR_GET_CMD:
         CP      'V'
         JP      Z,CMD_VERIFY
 
-        LD      HL,MSG_ERROR
-        CALL    PRINT_STR
-        JP      MONITOR_LOOP
+        JP      EXT_DISPATCH            ; A/E/S/Z and unknown-command handling
 
 ;=============================================================================
 ; THREE-CONSOLE ABSTRACTION
@@ -894,6 +896,7 @@ IDE_WRITE8:                             ; E=register, D=data
 ;=============================================================================
 PRINT_BANNER:
         CALL    PRINT_CRLF
+        CALL    EXT_HEADER              ; aligned IMSAI 8080 front-panel art
         LD      HL,MSG_BANNER
         CALL    PRINT_STR
         LD      HL,MSG_PANEL
@@ -946,12 +949,14 @@ MSG_FAIL:
 MSG_MISMATCH:
         DB      CR,LF,'MISMATCH ',0
 
+; Compact command legend keeps the F000H-F7FFH core below F800H.  The A/E/S/Z
+; implementations themselves live in the FBA0H monitor extension.
 MSG_MENU1:
-        DB      'B=Boot C=FDC+ D=Display F=Fill G=Goto H=Hardware J=RAMtest',CR,LF,0
+        DB      'A Map B Boot C FDC D Disp E Echo F Fill G Go H HW J Test',CR,LF,0
 MSG_MENU2:
-        DB      'K=Menu M=Move P=IDE/CF Q=I/O V=Verify',CR,LF
-        DB      'Syntax: SPACE or comma separates values; D/F/J start,end  M/V start,end,dest',CR,LF
-        DB      'Q I,port  Q O,port,byte',0
+        DB      'K Menu M Move P IDE Q I/O S Sub V Verify Z RAMtop',CR,LF
+        DB      'Hex params: SPACE or comma. D/F/J a,b  M/V a,b,c  S a',CR,LF
+        DB      'Q I,p  Q O,p,v',0
 
 MSG_BOOT_MENU:
         DB      'BOOT: [I] IDE/CF  [F] ALTAIR FDC+  [M] MONITOR : ',0
