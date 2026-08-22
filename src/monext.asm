@@ -148,15 +148,17 @@ RAMTOP_SCAN:
         JR      RAMTOP_SCAN
 
 RAMTOP_FOUND:
-        LD      L,0FFH
+        LD      A,H
+        LD      D,A                     ; preserve page across message pointer
         CALL    PRINT_CRLF
         LD      HL,MSG_RAMTOP
         CALL    PRINT_STR
-        ; Recover the page from the scan: CLASSIFY_PAGE preserved H, but the
-        ; preceding LD HL changed it, so save/restore around the message.
-        ; This entry is reached with H still containing the page number.
-        ; Recompute by scanning again is unnecessary: preserve it explicitly.
-        JP      MONITOR                 ; replaced below by compact real path
+        LD      H,D
+        LD      L,0FFH
+        CALL    PRINT_HEX16
+        LD      A,'H'
+        CALL    MON_CONOUT
+        JP      MONITOR
 
 RAMTOP_NONE:
         CALL    PRINT_CRLF
