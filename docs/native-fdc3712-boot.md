@@ -50,8 +50,18 @@ The CDBL reservation is gone. The ROM is now assembled as three source-level mod
 - `F000H-F7FFH`: compact monitor core
 - `F800H-FB91H`: native FDC+3712 module
 - `FB92H-FB9FH`: reserved gap
-- `FBA0H-...`: monitor extension
-- remaining bytes through `FFFFH`: erased/padding
+- `FBA0H-FF2EH`: monitor extension
+- `FF2FH-FFFFH`: erased/padding
+
+Latest CI layout:
+
+- monitor core: 2018 bytes, 30 bytes free before `F800H`
+- FDC+3712: 914 bytes
+- gap before extension: 14 bytes
+- monitor extension: 911 bytes
+- free at top of ROM: 209 bytes
+- 4K SHA-256: `86dce57d8cb7e37162b555c8ca1e04eca7bd031daddc8c854b9ca3e53657e6c0`
+- 8K SHA-256: `2bf008fb3a95ccc2824e0bdd27749d8abe2f5c6beb93bd912bb4c3332e6cf37b`
 
 The monitor extension restores the aligned IMSAI 8080 front-panel sign-on graphic and adds the `A`, `E`, `S`, and `Z` commands. The core dispatches those commands through fixed entry `FBA0H` and calls the extension header through `FBA3H`.
 
