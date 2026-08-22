@@ -51,7 +51,7 @@ The ROM additionally treats the FD3712 write-protect status bit (`10H`) as a wri
 
 The physical 28C64 programmer image is unchanged in overall arrangement: the lower physical 4K is `FFH`, and the complete logical `F000H-FFFFH` image occupies the upper physical 4K.
 
-The native boot hook is now source-level code in `src/monitor4k.asm`: `FDC_BOOT` jumps directly to `F800H`, and the monitor strings identify the 3712 module directly. `tools/build_image.py` no longer patches the assembled monitor binary; it only verifies the layout and combines the monitor and FDC+3712 module.
+The native boot hook is source-level code in `src/monitor4k.asm`: `FDC_BOOT` jumps directly to `F800H`, and the monitor strings identify the 3712 module directly. `tools/build_image.py` no longer patches the assembled monitor binary; it only verifies the layout and combines the monitor and FDC+3712 module.
 
 The cleaned source build is byte-for-byte identical to the physically tested pre-cleanup ROM image:
 
@@ -73,6 +73,8 @@ Verified behavior:
 
 This cross-drive copy is strong end-to-end validation of the drive-select, seek, read, write-buffer, write-sector, directory-update, and CP/M BIOS integration paths. It also confirms useful media compatibility with the archived Digital Systems single-density disk format used in this IMSAI project.
 
-A write-protect rejection test is still recommended as a final error-path check. After the source cleanup, perform one final ROM smoke test before merging the branch.
+A write-protect rejection test is still recommended as a final error-path check.
+
+For the final post-cleanup smoke test, pull the branch, run `make clean && make verify`, confirm the two hashes above, burn `build/IMSAI_TARGET_MONITOR_28C64.bin`, boot with `C`, run `DIR`, and perform one small read/write operation. Because the hashes are unchanged, this is a regression smoke test of the source cleanup rather than a new ROM design.
 
 On read/seek failure the ROM prints `FDC+3712 READ/SEEK ERROR` and returns to the monitor. If the 51-sector boot image does not match the validated system, it prints `FDC+3712 SYSTEM IMAGE CHECKSUM ERROR` and returns to the monitor.
