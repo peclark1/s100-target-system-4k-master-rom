@@ -63,10 +63,10 @@ Verified behavior:
 - `DIR` succeeds from the boot disk;
 - CP/M file creation and writeback on drive A succeed;
 - the written file can be read back correctly;
-- a Digital Systems single-density CP/M disk in physical drive B is readable through the same FDC+3712 BIOS path;
+- a Digital Systems single-density CP/M disk placed in physical drive B is readable through the same FDC+3712 BIOS path;
 - CP/M successfully copied a file from B: to A:, simultaneously exercising drive-B selection/read and drive-A allocation/directory/data writes.
 
-This cross-drive copy is strong end-to-end validation of the drive-select, seek, read, write-buffer, write-sector, directory-update, and CP/M BIOS integration paths.
+This cross-drive copy is strong end-to-end validation of the drive-select, seek, read, write-buffer, write-sector, directory-update, and CP/M BIOS integration paths. It also confirms useful media compatibility with the archived Digital Systems single-density disk format used in this IMSAI project.
 
 A write-protect rejection test is still recommended before declaring the write path final.
 
