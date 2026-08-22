@@ -55,7 +55,7 @@ For the hardware-validation branch, `tools/build_image.py` still assertion-patch
 
 ## Physical bench validation
 
-The native ROM path has now been validated on the physical IMSAI with the FDC+ firmware 1.8 Drive Type 8 configuration and SA800-class drives.
+The native ROM path, including writes, has now been validated on the physical IMSAI with the FDC+ firmware 1.8 Drive Type 8 configuration and SA800-class drives.
 
 Verified behavior:
 
@@ -68,6 +68,6 @@ Verified behavior:
 
 This cross-drive copy is strong end-to-end validation of the drive-select, seek, read, write-buffer, write-sector, directory-update, and CP/M BIOS integration paths. It also confirms useful media compatibility with the archived Digital Systems single-density disk format used in this IMSAI project.
 
-A write-protect rejection test is still recommended before declaring the write path final.
+A write-protect rejection test is still recommended as a final error-path check.
 
 On read/seek failure the ROM prints `FDC+3712 READ/SEEK ERROR` and returns to the monitor. If the 51-sector boot image does not match the validated system, it prints `FDC+3712 SYSTEM IMAGE CHECKSUM ERROR` and returns to the monitor.
