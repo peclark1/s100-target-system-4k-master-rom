@@ -9,8 +9,8 @@
 ;   Serial I/O V3 channel A at A1H/A3H
 ;   IMSAI MIO SIO at 42H/43H
 ;
-; Assemble with Pasmo.  CDBL is installed separately by tools/build_image.py
-; at FF00H-FFFFH, so this source MUST remain below FF00H.
+; Assemble with Pasmo.  The native FDC+3712 boot module is assembled
+; separately at F800H, so this source MUST remain below F800H.
 ;=============================================================================
 
         ORG     0F000H
@@ -654,7 +654,7 @@ FDC_BOOT:
         CALL    PRINT_CRLF
         LD      HL,MSG_FDC_BOOT
         CALL    PRINT_STR
-        JP      0FF00H                  ; exact published CDBL 2.05
+        JP      0F800H                  ; native FDC+3712 boot module
 
 AUTO_BOOT:
         LD      HL,MSG_AUTOBOOT
@@ -928,7 +928,7 @@ MSG_MENU2:
 MSG_BOOT_MENU:
         DB      'BOOT: [I] IDE/CF  [F] ALTAIR FDC+  [M] MONITOR : ',0
 MSG_FDC_BOOT:
-        DB      'BOOTING ALTAIR FDC+ WITH CDBL...',CR,LF,0
+        DB      'BOOTING ALTAIR FDC+ WITH 3712...',CR,LF,0
 MSG_IDE_BOOT:
         DB      'BOOTING CP/M FROM IDE/CF...',CR,LF,0
 MSG_IDE_NOT_READY:
@@ -945,6 +945,6 @@ MSG_HW2:
         DB      '  CONSOLE=',0
 MSG_HW3:
         DB      'RAM 0000H-EFFFH  ROM F000H-FFFFH',CR,LF
-        DB      'IDE/CF 30H-34H  FDC+ 08H-0AH  CDBL FF00H',CR,LF,0
+        DB      'IDE/CF 30H-34H  FDC+ 08H-0AH  3712 F800H',CR,LF,0
 
-; tools/build_image.py enforces that the assembled body ends before FF00H.
+; tools/build_image.py enforces that the assembled body ends before F800H.
