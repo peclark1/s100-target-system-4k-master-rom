@@ -101,8 +101,16 @@ MAP_PAGE:
 
 ; Return A='R' for writable RAM, A='P' for non-writable data (ROM/PROM),
 ; or A='.' when all 256 bytes read FFH.  H (page number) is preserved.
+;
+; This target has a fixed ROM window at F000H-FFFFH.  Never perform the
+; complement/write RAM probe there: even though the FDC+ ROM socket normally
+; holds /WE inactive, the monitor should not depend on that electrical detail.
 CLASSIFY_PAGE:
         LD      L,0
+        LD      A,H
+        CP      0F0H
+        JR      NC,CLASS_SCAN_START
+
         LD      A,(HL)
         LD      E,A                     ; save original first byte
         CPL
@@ -118,7 +126,8 @@ CLASSIFY_PAGE:
 
 CLASS_NOT_RAM:
         LD      A,E
-        LD      (HL),A                  ; harmless for ROM; restore if possible
+        LD      (HL),A                  ; restore if possible
+CLASS_SCAN_START:
         LD      L,0
 CLASS_SCAN:
         LD      A,(HL)
