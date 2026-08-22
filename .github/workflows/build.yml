@@ -28,3 +28,5 @@ jobs:
             build/monitor.sym
             build/fdc3712rom.bin
             build/fdc3712rom.sym
+            build/monext.bin
+            build/monext.sym
