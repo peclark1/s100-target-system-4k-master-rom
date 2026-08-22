@@ -51,7 +51,12 @@ The ROM additionally treats the FD3712 write-protect status bit (`10H`) as a wri
 
 The physical 28C64 programmer image is unchanged in overall arrangement: the lower physical 4K is `FFH`, and the complete logical `F000H-FFFFH` image occupies the upper physical 4K.
 
-The native boot hook is now source-level code in `src/monitor4k.asm`: `FDC_BOOT` jumps directly to `F800H`, and the monitor strings identify the 3712 module directly. `tools/build_image.py` no longer patches the assembled monitor binary; it only verifies the layout and combines the monitor and FDC+3712 module. The cleaned build is expected to remain byte-for-byte identical to the physically tested pre-cleanup image.
+The native boot hook is now source-level code in `src/monitor4k.asm`: `FDC_BOOT` jumps directly to `F800H`, and the monitor strings identify the 3712 module directly. `tools/build_image.py` no longer patches the assembled monitor binary; it only verifies the layout and combines the monitor and FDC+3712 module.
+
+The cleaned source build is byte-for-byte identical to the physically tested pre-cleanup ROM image:
+
+- 4K SHA-256: `532ba8a7c68d0087746cb6cb5848fc30875d4c737ee089cb264527f8135cac7e`
+- 8K SHA-256: `3665eec485fe167ba67173a097efaebdad1f51ba6f59e9b2724c5fc1357c1099`
 
 ## Physical bench validation
 
