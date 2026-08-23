@@ -1,8 +1,8 @@
 # IMSAI 8080 Front Panel ASCII Template
 
-This is a preserved 80-column ASCII-art template of the IMSAI 8080 front panel for possible use in a future 4K monitor ROM update.
+This is the canonical 80-column ASCII-art template of the IMSAI 8080 front panel used by the 4K target monitor startup banner.
 
-The artwork is intentionally kept separate from the current ROM source so it can be evaluated for ROM-space cost and incorporated later when another monitor change is being made.
+The artwork is kept here as the human-readable spacing reference. The ROM build generator mirrors this exact artwork into the generated monitor source so future code changes can preserve the approved layout.
 
 **Formatting requirements:**
 
@@ -25,6 +25,8 @@ The artwork is intentionally kept separate from the current ROM source so it can
 +------------------------------------------------------------------------------+
 ```
 
-## Intended future use
+## ROM integration
 
-When the monitor ROM is next revised, this template can be converted to ROM string data and displayed as an optional startup/splash screen, subject to available space in the 4K image. The source version should remain here as the canonical spacing reference even if a compact or encoded ROM representation is later added.
+`tools/make_dsi_monitor.py` replaces the compact baseline `MSG_BANNER` with this front-panel artwork when it generates the production monitor source. The normal panel-byte and selected-console status line is printed immediately below the artwork.
+
+Keep this document and the generator copy synchronized if the artwork is adjusted in the future. The generated image must still fit below FF00H because FF00H-FFFFH is reserved for the FDC+ CDBL image.
