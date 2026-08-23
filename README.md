@@ -39,7 +39,8 @@ Current logical ROM layout:
 |---|---|
 | `F000H-F7FFH` | compact monitor core |
 | `F800H-FB91H` | native FDC+3712 boot/read/write module |
-| `FB92H-FB9FH` | reserved gap |
+| `FB92H-FB9DH` | stable public FDC+3712 API jump table |
+| `FB9EH-FB9FH` | reserved gap |
 | `FBA0H-...` | monitor extension (`A/E/S/Z` plus IMSAI header) |
 | remaining bytes through `FFFFH` | erased/padding |
 
@@ -71,6 +72,21 @@ The ROM exposes stable public console entries:
 - `F00CH` - warm monitor entry
 
 The native floppy CP/M BIOS uses those same entries, so the front-panel console choice remains active after floppy boot.
+
+## Public FDC+3712 ROM API
+
+The physically-proven 914-byte native FDC+3712 module at `F800H-FB91H` is kept unchanged. The build now uses 12 bytes of the former reserved gap as a fixed ABI for other resident software, including the target CP/M 3 BIOS:
+
+| Address | Entry | Contract |
+|---|---|---|
+| `FB92H` | INIT | initialize/reset/restore the native FDC+3712 path |
+| `FB95H` | SELDRV | select physical drive in register `C` (`0` or `1`) |
+| `FB98H` | READ | read one 128-byte sector using the native ROM workspace |
+| `FB9BH` | WRITE | write one 128-byte sector using the native ROM workspace |
+
+The API is generated from `fdc3712rom.sym`, so each vector is an absolute `JP` to the corresponding symbol in the proven module. This avoids maintaining a second copy of the low-level FD3712 driver in CP/M 3 while keeping the public entry addresses fixed if internal code addresses change.
+
+The native service routines retain the original Mike-Douglas-compatible page-zero workspace at `0040H-0047H`. External callers that cannot reserve those bytes must save/restore them around API calls. The CP/M 3 adapter does exactly that and keeps its own persistent copy of the ROM driver's state.
 
 ## Monitor commands
 
@@ -161,10 +177,11 @@ A successful build creates:
 - `build/IMSAI_TARGET_MONITOR_4K.bin` - exactly 4096 bytes, logical `F000H-FFFFH`
 - `build/IMSAI_TARGET_MONITOR_28C64.bin` - exactly 8192 bytes, ready for the FDC+ 27C64/28C64 socket
 - `build/monitor.raw.bin` / `monitor.sym` - compact monitor core
-- `build/fdc3712rom.bin` / `fdc3712rom.sym` - native floppy module
+- `build/fdc3712rom.bin` / `fdc3712rom.sym` - unchanged native floppy module
+- `build/fdc3712api.bin` - four generated public FDC jump vectors at `FB92H-FB9DH`
 - `build/monext.bin` / `monext.sym` - monitor extension
 
-The build enforces all three ROM boundaries and fails if the monitor crosses `F800H`, the FDC module crosses `FBA0H`, or the extension crosses `FFFFH`.
+The build enforces all ROM boundaries and fails if the monitor crosses `F800H`, the proven FDC module crosses the API boundary at `FB92H`, the API crosses `FBA0H`, or the extension crosses `FFFFH`.
 
 ## Deliberately excluded
 
