@@ -53,17 +53,62 @@ EXT_DISPATCH:
 ;=============================================================================
 ; IMSAI front-panel sign-on header
 ;=============================================================================
+; The approved 80-column panel artwork is too large to store literally in the
+; remaining 4K ROM space, so it uses a tiny target-specific packing format:
+;   00H       end of artwork
+;   01H-1EH   output that many spaces
+;   1FH       output CR/LF
+;   20H-7EH   literal printable ASCII
+;   80H-FFH   output '-' (token AND 7FH) times
+;
+; This keeps the docs/ ASCII template human-readable while preserving the exact
+; 80-column display in ROM.
 EXT_HEADER:
-        LD      HL,IMSAI_HEADER
-        JP      PRINT_STR
+        LD      HL,IMSAI_HEADER_PACKED
+HDR_NEXT:
+        LD      A,(HL)
+        INC     HL
+        OR      A
+        RET     Z
+        CP      01FH
+        JR      Z,HDR_NEWLINE
+        BIT     7,A
+        JR      NZ,HDR_DASH_RUN
+        CP      SPACE
+        JR      NC,HDR_LITERAL
+        LD      B,A
+        LD      A,SPACE
+HDR_RUN:
+        CALL    MON_CONOUT
+        DJNZ    HDR_RUN
+        JR      HDR_NEXT
+HDR_DASH_RUN:
+        AND     07FH
+        LD      B,A
+        LD      A,'-'
+        JR      HDR_RUN
+HDR_NEWLINE:
+        CALL    PRINT_CRLF
+        JR      HDR_NEXT
+HDR_LITERAL:
+        CALL    MON_CONOUT
+        JR      HDR_NEXT
 
-; Every line is exactly 66 columns wide, including the two border characters.
-IMSAI_HEADER:
-        DB      '+----------------------------------------------------------------+',CR,LF
-        DB      '|  o o o o o o o o       I M S A I   8 0 8 0                     |',CR,LF
-        DB      '|  o o o o o o o o    o o o o o o o o o o o o o o o o            |',CR,LF
-        DB      '|  / / / / / / / /    / / / / / / / /    [ RUN ] [ STOP ]        |',CR,LF
-        DB      '+----------------------------------------------------------------+',CR,LF,0
+; Canonical artwork is docs/IMSAI_FRONT_PANEL_ASCII_TEMPLATE.md.
+; Decompressed output is eleven 80-column lines plus CR/LF after each line.
+IMSAI_HEADER_PACKED:
+        DB      '+',0CEH,'+',01FH
+        DB      '|',01H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'PROGRAMMED',018H,'I',01H,'M',01H,'S',01H,'A',01H,'I',03H,'8',01H,'0',01H,'8',01H,'0|',01FH
+        DB      '|',01H,'7',02H,'6',02H,'5',02H,'4',02H,'3',02H,'2',02H,'1',02H,'0',02H,'OUTPUT',01BH,094H,'|',01FH
+        DB      '|',01H,'MR',01H,'IN',01H,'M1',01H,'OT',01H,'HL',01H,'ST',01H,'WO',01H,'IA',0AH,'7',02H,'6',02H,'5',02H,'4',02H,'3',02H,'2',02H,'1',02H,'0',016H,'|',01FH
+        DB      '|',01H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'STATUS',03H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'DATA',010H,'|',01FH
+        DB      '|',019H,'BYTE',01DH,'BUS',011H,'|',01FH
+        DB      '|',01H,'15',01H,'14',01H,'13',01H,'12',01H,'11',01H,'10',01H,'9',02H,'8',02H,'ADDRESS',02H,'7',02H,'6',02H,'5',02H,'4',02H,'3',02H,'2',02H,'1',02H,'0',01H,'ENABLED',01H,'RUN',01H,'WAIT',01H,'HOLD|',01FH
+        DB      '|',01H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'BUS',06H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',02H,'o',06H,'o',04H,'o',04H,'o',04H,'o|',01FH
+        DB      '|',01H,'ADDRESS',01H,'+',01H,'PROGRAM',01H,'INPUT',0AH,'ADDRESS',01H,'+',01H,'DATA',06H,'EXA',01H,'DEP',01H,'RST',01H,'RUN',01H,'STP',01H,'PWR',01H,'|',01FH
+        DB      '|',01H,'[_][_][_][_][_][_][_][_]',04H,'[_][_][_][_][_][_][_][_]',02H,'[_]',01H,'[_]',01H,'[_]',01H,'[_]',01H,'[_]',01H,'[_]|',01FH
+        DB      '+',0CEH,'+',01FH
+        DB      00H
 
 ;=============================================================================
 ; A - memory map
