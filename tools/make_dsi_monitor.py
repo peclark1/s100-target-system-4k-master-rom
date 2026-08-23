@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Generate the DSI-enabled monitor source from the hardware-tested v0.1 source.
 
-This branch deliberately leaves src/monitor4k.asm untouched as the validated
-baseline.  The generator performs a small set of exact, reviewable textual
-edits and inserts src/dsi_boot.inc before AUTO_BOOT.  If the baseline changes
-and an expected anchor no longer matches exactly, generation fails rather than
-silently producing an unintended monitor.
+The generator deliberately leaves src/monitor4k.asm untouched as the validated
+baseline. It performs a small set of exact, reviewable textual edits, inserts
+src/dsi_boot.inc before AUTO_BOOT, and replaces the compact startup banner with
+the canonical IMSAI front-panel ASCII artwork preserved in docs/. If the
+baseline changes and an expected anchor no longer matches exactly, generation
+fails rather than silently producing an unintended monitor.
 """
 
 from __future__ import annotations
@@ -85,9 +86,35 @@ def main() -> None:
         "hardware text",
     )
 
+    front_panel_banner = (
+        "MSG_BANNER:\n"
+        "        DB      '+------------------------------------------------------------------------------+',CR,LF\n"
+        "        DB      '| o  o  o  o  o  o  o  o  PROGRAMMED                        I M S A I   8 0 8 0|',CR,LF\n"
+        "        DB      '| 7  6  5  4  3  2  1  0  OUTPUT                           --------------------|',CR,LF\n"
+        "        DB      '| MR IN M1 OT HL ST WO IA          7  6  5  4  3  2  1  0                      |',CR,LF\n"
+        "        DB      '| o  o  o  o  o  o  o  o  STATUS   o  o  o  o  o  o  o  o  DATA                |',CR,LF\n"
+        "        DB      '|                         BYTE                             BUS                 |',CR,LF\n"
+        "        DB      '| 15 14 13 12 11 10 9  8  ADDRESS  7  6  5  4  3  2  1  0 ENABLED RUN WAIT HOLD|',CR,LF\n"
+        "        DB      '| o  o  o  o  o  o  o  o  BUS      o  o  o  o  o  o  o  o      o    o    o    o|',CR,LF\n"
+        "        DB      '| ADDRESS + PROGRAM INPUT          ADDRESS + DATA      EXA DEP RST RUN STP PWR |',CR,LF\n"
+        "        DB      '| [_][_][_][_][_][_][_][_]    [_][_][_][_][_][_][_][_]  [_] [_] [_] [_] [_] [_]|',CR,LF\n"
+        "        DB      '+------------------------------------------------------------------------------+',CR,LF,0\n"
+    )
+
+    text = replace_once(
+        text,
+        "MSG_BANNER:\n"
+        "        DB      'IMSAI 8080 TARGET MONITOR 4K @ F000H',CR,LF,0\n",
+        front_panel_banner,
+        "startup banner",
+    )
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(text, encoding="ascii")
-    print(f"generated {args.output} with Digital Systems FDC-2 boot support")
+    print(
+        f"generated {args.output} with Digital Systems FDC-2 boot support "
+        "and IMSAI front-panel banner"
+    )
 
 
 if __name__ == "__main__":
