@@ -565,7 +565,6 @@ RAMTEST_FAIL:
 
 CMD_MOVE:                               ; M start,end,destination
         CALL    GET_THREE
-        LD      A,(HL)
 MOVE_LOOP:
         LD      A,(HL)
         LD      (BC),A
