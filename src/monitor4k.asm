@@ -34,6 +34,9 @@ ESC             EQU     1BH
 CTRL_C          EQU     03H
 
 PANEL_PORT      EQU     0FFH            ; IMSAI programmed-input/sense switches
+PANEL_MASK      EQU     0C0H            ; SW08=D7, SW09=D6 on physical IMSAI
+PANEL_SERIAL    EQU     080H            ; SW09 SW08 = 01
+PANEL_MIO       EQU     040H            ; SW09 SW08 = 10
 
 CIO_STATUS      EQU     00H
 CIO_DATA        EQU     01H
@@ -92,12 +95,27 @@ RESET:
         DI
         LD      SP,STACK_TOP
 
+        ; Physical IMSAI port FFH mapping verified 2026-08-23:
+        ;   SW09 SW08 = 00 -> 00H
+        ;               01 -> 80H  (SW08 appears on D7)
+        ;               10 -> 40H  (SW09 appears on D6)
+        ;               11 -> C0H
         IN      A,(PANEL_PORT)
         LD      (PANEL_BYTE),A
-        AND     03H                     ; bit 0=SW08, bit 1=SW09
-        CP      03H
-        JR      NZ,RESET_SEL_OK
-        XOR     A                       ; reserved 11 -> Console I/O fallback
+        AND     PANEL_MASK
+        JR      Z,RESET_SEL_CIO
+        CP      PANEL_SERIAL
+        JR      Z,RESET_SEL_SERIAL
+        CP      PANEL_MIO
+        JR      Z,RESET_SEL_MIO
+RESET_SEL_CIO:
+        XOR     A                       ; 00 or reserved C0 -> Console I/O
+        JR      RESET_SEL_OK
+RESET_SEL_SERIAL:
+        LD      A,CONSOLE_SERIAL
+        JR      RESET_SEL_OK
+RESET_SEL_MIO:
+        LD      A,CONSOLE_MIO
 RESET_SEL_OK:
         LD      (CONSOLE_SEL),A
 
@@ -167,6 +185,7 @@ MONITOR_GET_CMD:
 ;=============================================================================
 ; Console selector:
 ;   SW09 SW08 = 00 Console I/O, 01 Serial I/O A, 10 IMSAI MIO, 11 reserved.
+; Raw port FFH values are 00H, 80H, 40H, C0H respectively.
 ;
 ; MIO status mapping is the verified base-40H setup: CTL0=TR and CTL1=RR.
 ; The MIO UART is configured by board jumpers and requires no monitor init.
@@ -546,6 +565,7 @@ RAMTEST_FAIL:
 
 CMD_MOVE:                               ; M start,end,destination
         CALL    GET_THREE
+        LD      A,(HL)
 MOVE_LOOP:
         LD      A,(HL)
         LD      (BC),A
