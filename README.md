@@ -1,8 +1,8 @@
 # S-100 Target System 4K Master ROM
 
-A clean 4K Z80 monitor ROM for the target IMSAI 8080 configuration.
+A compact 4K Z80 monitor ROM for the target IMSAI 8080 configuration.
 
-This project is intentionally **not** another trimmed build of the older two-page MASTER.Z80 monitor. It is a new, small monitor designed around the final target hardware and a fixed 4K ROM window.
+This project is intentionally target-specific rather than another two-page build of the older MASTER.Z80 monitor. It keeps a fixed 4K ROM window at `F000H-FFFFH`, uses the North Star ZPB-A2 reset/auto-jump path, boots either IDE/CF or 8-inch floppy, and carries only the monitor features useful on this machine.
 
 ## Target hardware
 
@@ -14,6 +14,7 @@ This project is intentionally **not** another trimmed build of the older two-pag
   - 60K RAM: `0000H-EFFFH`
   - 4K ROM window: `F000H-FFFFH`
   - existing full-64K modification remains installed
+  - firmware 1.8, Drive Type 8 / FD3712 for 8-inch IBM-3740 SSSD media
   - 27C64 / 28C64 ROM socket
 - S100Computers Dual IDE/CF V3 at `30H-34H`
 - S100Computers Console I/O V2 at `00H-01H`
@@ -21,64 +22,79 @@ This project is intentionally **not** another trimmed build of the older two-pag
 - IMSAI MIO at `40H-43H`
   - SIO data: `42H`
   - SIO status/control: `43H`
-  - verified working at 19,200 baud, 8N1
+  - verified at 19,200 baud, 8N1
 
-Future additions may include the Digital Systems disk subsystem, Polymorphic VTI, and other S-100 boards, but they are deliberately excluded from the first build.
+## Memory and ROM layout
 
-## Memory map
+CPU-visible memory:
 
 | Range | Function |
 |---|---|
 | `0000H-EFFFH` | FDC+ RAM |
-| `F000H-FEFFH` | 4K monitor code/data |
-| `FF00H-FFFFH` | Martin Eberhard CDBL boot loader |
+| `F000H-FFFFH` | 4K master ROM |
 
-The monitor therefore has 3840 bytes available before the fixed 256-byte CDBL image.
+Current logical ROM layout:
 
-The current v0.1 source assembles to **1993 bytes**, leaving **1847 bytes free** before CDBL. The build checks this limit automatically.
+| Range | Function |
+|---|---|
+| `F000H-F7FFH` | compact monitor core |
+| `F800H-FB91H` | native FDC+3712 boot/read/write module |
+| `FB92H-FB9DH` | stable public FDC+3712 API jump table |
+| `FB9EH-FB9FH` | reserved gap |
+| `FBA0H-...` | monitor extension (`A/E/S/Z` plus IMSAI header) |
+| remaining bytes through `FFFFH` | erased/padding |
 
-### FDC+ Rev B target configuration
+At CPU address `F000H`, A12 is high, so the logical 4K ROM occupies the **upper 4K half** of the physical 27C64/28C64. `tools/build_image.py` creates an 8K programmer image with the lower physical 4K filled with `FFH` and the complete logical ROM in the upper 4K.
 
-This project assumes the existing FDC+ full-64K modification remains installed. With that modification, the PROM page switch specifies the **last RAM page**, and PROM starts on the following 256-byte page. For the target map:
+For the modified FDC+ Rev B target map, the PROM-page switches specify the last RAM page:
 
-- RAM start: `0000H`
 - RAM end: `EFFFH`
 - PROM start: `F000H`
-- PROM page address switches `A12..A8`: `0 1 1 1 1` (page `EFH`)
+- PROM page switches `A12..A8`: `0 1 1 1 1` (page `EFH`)
 - PROM enable: enabled
-
-At CPU address `F000H`, A12 is high, so the logical 4K ROM occupies the **upper 4K half** of the physical 27C64/28C64. `tools/build_image.py` therefore creates an 8K programmer image with the lower 4K filled with `FFH` and the complete logical monitor in the upper 4K.
 
 ## IMSAI front-panel console selection
 
-The IMSAI programmed-input/sense-switch byte is read at **port `FFH`**. `EFH` was a legacy S100Computers/John Monahan convention and is not used by this IMSAI target.
-
-Switches 09 and 08 select the monitor console:
+The IMSAI programmed-input/sense-switch byte is read at **port `FFH`**.
 
 | SW09 | SW08 | Console |
 |---:|---:|---|
 | 0 | 0 | Console I/O V2 (`00H/01H`) |
 | 0 | 1 | Serial I/O V3 Port A (`A1H/A3H`) |
 | 1 | 0 | IMSAI MIO SIO (`42H/43H`) |
-| 1 | 1 | Reserved; initially falls back to Console I/O |
+| 1 | 1 | Reserved; currently falls back to Console I/O |
 
-The reserved state is intentionally available for a future fourth console such as the Polymorphic VTI.
+The ROM exposes stable public console entries:
 
-The monitor exposes three generic console primitives and keeps board-specific code behind them:
+- `F003H` - blocking console input
+- `F006H` - console output
+- `F009H` - console status
+- `F00CH` - warm monitor entry
 
-- `CONST` - character available?
-- `CONIN` - read a character
-- `CONOUT` - write a character
+The native floppy CP/M BIOS uses those same entries, so the front-panel console choice remains active after floppy boot.
 
-Only Serial I/O Port A requires software initialization. The MIO SIO is configured by the board's hardware options and is designed to require no serial initialization at power-up.
+## Public FDC+3712 ROM API
 
-## First-build monitor features
+The physically-proven 914-byte native FDC+3712 module at `F800H-FB91H` is kept unchanged. The build now uses 12 bytes of the former reserved gap as a fixed ABI for other resident software, including the target CP/M 3 BIOS:
 
-Implemented initial command set:
+| Address | Entry | Contract |
+|---|---|---|
+| `FB92H` | INIT | initialize/reset/restore the native FDC+3712 path |
+| `FB95H` | SELDRV | select physical drive in register `C` (`0` or `1`) |
+| `FB98H` | READ | read one 128-byte sector using the native ROM workspace |
+| `FB9BH` | WRITE | write one 128-byte sector using the native ROM workspace |
 
+The API is generated from `fdc3712rom.sym`, so each vector is an absolute `JP` to the corresponding symbol in the proven module. This avoids maintaining a second copy of the low-level FD3712 driver in CP/M 3 while keeping the public entry addresses fixed if internal code addresses change.
+
+The native service routines retain the original Mike-Douglas-compatible page-zero workspace at `0040H-0047H`. External callers that cannot reserve those bytes must save/restore them around API calls. The CP/M 3 adapter does exactly that and keeps its own persistent copy of the ROM driver's state.
+
+## Monitor commands
+
+- `A` - memory map, one character per 256-byte page (`R` RAM, `P` ROM/non-writable, `.` empty/FF)
 - `B` - boot menu
-- `C` - boot Altair FDC+ using CDBL
-- `D` - display memory
+- `C` - native Altair FDC+3712 floppy boot
+- `D` - display memory as 16-byte hex rows with printable ASCII at the right
+- `E` - console echo test; Ctrl-C or Ctrl-Z exits
 - `F` - fill memory
 - `G` - go to address
 - `H` - hardware / front-panel status
@@ -87,54 +103,72 @@ Implemented initial command set:
 - `M` - move memory
 - `P` - boot CP/M from IDE/CF
 - `Q` - single-port I/O read/write diagnostic
-- `T` - type memory as ASCII
+- `S` - interactive examine/substitute memory
 - `V` - verify/compare memory
+- `Z` - find highest writable RAM
 
-`Ctrl-C` immediately boots the configured IDE/CF device.
+`T=Type` was removed because `D` again includes the ASCII column.
+
+Hex command parameters accept either a **space** or **comma** separator, and the typed delimiter is echoed. Examples:
+
+```text
+D F000,F07F
+D F000 F07F
+F 1000,10FF,00
+M 1000 10FF 2000
+Q I,43
+Q O,43,00
+S 1000
+```
+
+For `S`, each line shows the address and current byte. Enter a hex byte followed by space/comma/CR to replace it and advance; a bare delimiter advances without changing memory; `-` backs up one byte; ESC/Ctrl-C/Ctrl-Z exits.
+
+## Native FDC+3712 floppy boot
+
+The old CDBL payload has been removed. `C` now jumps to a ROM-native FD3712 module at `F800H` derived from Mike Douglas's FDC+3712 PROM programming model and validated on the physical IMSAI.
+
+The loader is intentionally specific to the supplied 48K CP/M 2.2 system layout:
+
+- IBM-3740 SSSD, 26 x 128-byte sectors
+- CP/M system loaded at `A600H-BF7FH`
+- BIOS base `BC00H`
+- original 51-sector checksum `54B0H`
+
+The loaded BIOS is patched in RAM to use the resident ROM disk services and master-ROM console primitives. Both floppy reads and writes are enabled. Write support uses the FD3712 write-buffer/write-sector sequence with optional CRC verification and explicit write-protect detection.
+
+Physical validation includes:
+
+- native cold boot to the CP/M `A>` prompt;
+- directory reads;
+- file creation/write/readback on drive A;
+- a Digital Systems single-density disk in physical drive B;
+- successful file copy from B: to A:, exercising drive selection, reads, allocation, directory updates, and writes end-to-end.
+
+## Startup
 
 On reset the monitor:
 
 1. enters at `F000H` through the North Star auto-jump feature;
-2. reads the IMSAI front-panel byte from `FFH`;
-3. selects the requested console and initializes it if required;
-4. initializes the Dual IDE/CF interface;
-5. displays a compact IMSAI banner and hardware status;
+2. reads the IMSAI front-panel byte at `FFH`;
+3. selects and initializes the requested console;
+4. displays the aligned IMSAI 8080 front-panel header and target-system status;
+5. initializes the Dual IDE/CF interface;
 6. performs a short cancelable IDE/CF auto-boot countdown;
 7. enters the monitor if a key is pressed.
 
-## Deliberately excluded from v0.1
-
-To keep the ROM small and target-specific, the first build does not contain:
-
-- Z80 CPU V2 ROM banking / port `D3H` support
-- duplicate high/low ROM pages
-- XMODEM
-- RTC/time/date support
-- printer support
-- speech support
-- Serial I/O channel B support
-- extended-memory window commands
-- scan-all-256-I/O-ports diagnostics
-- legacy CP/M 1.x jump tables
-- auxiliary processor support
-- Versafloppy / ZFDC support
-- Digital Systems disk support
-- Polymorphic VTI support
-
-These can be reconsidered later if useful; the current build has substantial ROM space remaining.
-
 ## Building on Ubuntu
 
-Install the assembler once:
+Install Pasmo once:
 
 ```sh
 sudo apt update
 sudo apt install pasmo
 ```
 
-Then clone/pull the repository and build:
+Then build and verify:
 
 ```sh
+make clean
 make verify
 ```
 
@@ -142,34 +176,19 @@ A successful build creates:
 
 - `build/IMSAI_TARGET_MONITOR_4K.bin` - exactly 4096 bytes, logical `F000H-FFFFH`
 - `build/IMSAI_TARGET_MONITOR_28C64.bin` - exactly 8192 bytes, ready for the FDC+ 27C64/28C64 socket
-- `build/monitor.raw.bin` - assembled monitor body before padding/CDBL insertion
-- `build/monitor.sym` - Pasmo symbol table
+- `build/monitor.raw.bin` / `monitor.sym` - compact monitor core
+- `build/fdc3712rom.bin` / `fdc3712rom.sym` - unchanged native floppy module
+- `build/fdc3712api.bin` - four generated public FDC jump vectors at `FB92H-FB9DH`
+- `build/monext.bin` / `monext.sym` - monitor extension
 
-The GitHub Actions workflow also publishes those four files as the `imsai-target-monitor-v0.1` build artifact for each successful PR build.
+The build enforces all ROM boundaries and fails if the monitor crosses `F800H`, the proven FDC module crosses the API boundary at `FB92H`, the API crosses `FBA0H`, or the extension crosses `FFFFH`.
 
-The build fails if monitor code crosses into the fixed CDBL region at `FF00H`, if CDBL is not exactly 256 bytes, or if either final ROM image has the wrong structure/size.
+## Deliberately excluded
 
-The first successful GitHub Actions build produced:
+The target ROM still does not carry hardware-specific features that are not needed on this IMSAI, including RTC/time/date support, printer/speech support, Serial I/O channel B, IA-2 extended-memory window commands, scan-all-256-I/O-port diagnostics, auxiliary-processor support, Versafloppy/ZFDC support, or the old two-page ROM-banking framework.
 
-- monitor body: `1993 / 3840` bytes
-- free before CDBL: `1847` bytes
-- 4K SHA-256: `50edb2a1bfceb5fc19b782550c9dbacefd75629a773200bb88f6ee8eab26724c`
-- 8K SHA-256: `1473d9295a72b156ced08d68aa026537eb48888ccb6efbcdea1e19b95548c696`
-
-## v0.1 hardware validation
-
-The v0.1 ROM image has been successfully bench-tested in the target IMSAI hardware configuration.
-
-Verified on August 20, 2026 with:
-
-- North Star ZPB-A2 Z80A CPU, auto-jump/reset target `F000H`
-- modified Altair FDC+ providing RAM at `0000H-EFFFH` and ROM at `F000H-FFFFH`
-- FDC+ PROM page switches set for last RAM page `EFH`: PROM enable ON, A12 OFF, A11-A8 ON
-- physical 28C64 image generated by this repository, with the logical 4K monitor in the upper half of the device
-- Console I/O V2 selected for the initial monitor-console test
-
-The programmed ROM reset successfully into the new monitor at `F000H`, confirming the North Star auto-jump, FDC+ ROM mapping, physical 28C64 image placement, and initial Console I/O path on the actual IMSAI.
+XMODEM remains omitted for now because modern host-link/file-transfer tools make it much less valuable than the monitor, disk, and diagnostic features that fit in the 4K ROM.
 
 ## Development approach
 
-GitHub is the source of truth from the beginning. Development proceeds in small, reviewable commits with reproducible local builds on Ubuntu. New hardware-test candidates are developed on branches/PRs and are merged to `main` after review and successful bench testing.
+GitHub is the source of truth. Development proceeds in small, reviewable commits with reproducible Ubuntu builds. Hardware-test candidates remain on branches/PRs until they pass the physical IMSAI bench test.

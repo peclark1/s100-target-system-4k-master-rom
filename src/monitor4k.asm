@@ -9,8 +9,8 @@
 ;   Serial I/O V3 channel A at A1H/A3H
 ;   IMSAI MIO SIO at 42H/43H
 ;
-; Assemble with Pasmo.  CDBL is installed separately by tools/build_image.py
-; at FF00H-FFFFH, so this source MUST remain below FF00H.
+; Assemble with Pasmo.  The native FDC+3712 boot module is assembled at F800H
+; and the monitor extension at FBA0H, so this source MUST remain below F800H.
 ;=============================================================================
 
         ORG     0F000H
@@ -77,6 +77,10 @@ IDE_CMD_READ    EQU     020H
 
 CPMLDR_ADDR     EQU     0100H
 CPMLDR_SECTORS  EQU     12              ; proven V5.6 target setting
+
+; Monitor extension fixed entry points.
+EXT_DISPATCH    EQU     0FBA0H
+EXT_HEADER      EQU     0FBA3H
 
 ; Monitor-private RAM.  The physical FDC+ RAM still extends through EFFFH.
 ; Keep the stack/work bytes away from the CP/M loader at 0100H.
@@ -171,14 +175,10 @@ MONITOR_GET_CMD:
         JP      Z,IDE_BOOT
         CP      'Q'
         JP      Z,CMD_IO
-        CP      'T'
-        JP      Z,CMD_TYPE
         CP      'V'
         JP      Z,CMD_VERIFY
 
-        LD      HL,MSG_ERROR
-        CALL    PRINT_STR
-        JP      MONITOR_LOOP
+        JP      EXT_DISPATCH            ; A/E/S/Z and unknown-command handling
 
 ;=============================================================================
 ; THREE-CONSOLE ABSTRACTION
@@ -375,8 +375,8 @@ TO_UPPER:
         AND     5FH
         RET
 
-; Read a hexadecimal value (1-4 digits) from the console.  Spaces and commas
-; are skipped before the first digit.  The terminating delimiter is consumed.
+; Read a hexadecimal value (1-4 digits) from the console. Spaces and commas
+; are valid separators and are echoed as typed. CR terminates the final value.
 ; Returns HL=value.
 GET_HEX16:
         LD      HL,0
@@ -388,9 +388,9 @@ GET_HEX_CHAR:
         CALL    TO_UPPER
 
         CP      SPACE
-        JR      Z,GET_HEX_DELIM
+        JR      Z,GET_HEX_DELIM_ECHO
         CP      ','
-        JR      Z,GET_HEX_DELIM
+        JR      Z,GET_HEX_DELIM_ECHO
         CP      CR
         JR      Z,GET_HEX_DELIM
 
@@ -411,10 +411,14 @@ GET_HEX_CHAR:
         INC     B
         JR      GET_HEX_CHAR
 
+GET_HEX_DELIM_ECHO:
+        PUSH    AF
+        CALL    CONOUT
+        POP     AF
 GET_HEX_DELIM:
         LD      A,B
         OR      A
-        JR      Z,GET_HEX_CHAR          ; no digits yet: keep skipping delimiters
+        JR      Z,GET_HEX_CHAR          ; no digits yet: keep accepting separators
         RET
 
 HEX_VALUE:                              ; ASCII A -> nibble A, carry on error
@@ -499,24 +503,64 @@ HW_CON_PRINT:
         CALL    PRINT_STR
         JP      MONITOR_LOOP
 
-CMD_DISPLAY:                            ; D start,end
+; D start,end - 16-byte rows with hexadecimal bytes and printable ASCII.
+; Like John's original monitor, the requested range is rounded to complete
+; 16-byte display lines so the ASCII column remains aligned.
+CMD_DISPLAY:
         CALL    GET_TWO
-DISP_LOOP:
         LD      A,L
-        AND     0FH
-        JR      NZ,DISP_BYTE
+        AND     0F0H
+        LD      L,A                     ; first display row
+        LD      A,E
+        AND     0F0H
+        LD      E,A                     ; last display row
+
+DISP_ROW:
         CALL    PRINT_CRLF
         CALL    PRINT_HEX16
         LD      A,':'
         CALL    CONOUT
-DISP_BYTE:
+
+        PUSH    HL                      ; save row start for ASCII pass
+        LD      B,16
+DISP_HEX_LOOP:
         CALL    PRINT_SPACE
         LD      A,(HL)
         CALL    PRINT_HEX8
-        CALL    RANGE_AT_END
-        JP      Z,MONITOR_LOOP
         INC     HL
-        JR      DISP_LOOP
+        DJNZ    DISP_HEX_LOOP
+
+        CALL    PRINT_SPACE
+        CALL    PRINT_SPACE
+        LD      A,'|'
+        CALL    CONOUT
+
+        EX      (SP),HL                 ; HL=row start, stack=next row
+        LD      B,16
+DISP_ASCII_LOOP:
+        LD      A,(HL)
+        CP      SPACE
+        JR      C,DISP_ASCII_DOT
+        CP      7FH
+        JR      C,DISP_ASCII_OUT
+DISP_ASCII_DOT:
+        LD      A,'.'
+DISP_ASCII_OUT:
+        CALL    CONOUT
+        INC     HL
+        DJNZ    DISP_ASCII_LOOP
+
+        LD      A,'|'
+        CALL    CONOUT
+        POP     HL                      ; next row address
+
+        PUSH    HL
+        OR      A                       ; clear carry
+        SBC     HL,DE                   ; another row if next row <= last row
+        POP     HL
+        JR      C,DISP_ROW
+        JR      Z,DISP_ROW
+        JP      MONITOR_LOOP
 
 CMD_FILL:                               ; F start,end,value
         CALL    GET_THREE
@@ -574,24 +618,6 @@ MOVE_LOOP:
         INC     BC
         JR      MOVE_LOOP
 
-CMD_TYPE:                               ; T start,end
-        CALL    GET_TWO
-TYPE_LOOP:
-        LD      A,(HL)
-        AND     7FH
-        CP      SPACE
-        JR      C,TYPE_DOT
-        CP      7FH
-        JR      C,TYPE_GO
-TYPE_DOT:
-        LD      A,'.'
-TYPE_GO:
-        CALL    CONOUT
-        CALL    RANGE_AT_END
-        JP      Z,MONITOR_LOOP
-        INC     HL
-        JR      TYPE_LOOP
-
 CMD_VERIFY:                             ; V start,end,destination
         CALL    GET_THREE
 VERIFY_LOOP:
@@ -622,9 +648,9 @@ IO_GET_MODE:
         CALL    CONIN
         CALL    TO_UPPER
         CP      SPACE
-        JR      Z,IO_GET_MODE
+        JR      Z,IO_MODE_DELIM
         CP      ','
-        JR      Z,IO_GET_MODE
+        JR      Z,IO_MODE_DELIM
         PUSH    AF
         CALL    CONOUT
         POP     AF
@@ -635,6 +661,9 @@ IO_GET_MODE:
         LD      HL,MSG_ERROR
         CALL    PRINT_STR
         JP      MONITOR_LOOP
+IO_MODE_DELIM:
+        CALL    CONOUT                  ; show the separator instead of hiding it
+        JR      IO_GET_MODE
 IO_INPUT:
         CALL    GET_HEX16
         LD      C,L
@@ -673,7 +702,7 @@ FDC_BOOT:
         CALL    PRINT_CRLF
         LD      HL,MSG_FDC_BOOT
         CALL    PRINT_STR
-        JP      0FF00H                  ; exact published CDBL 2.05
+        JP      0F800H                  ; native FDC+3712 boot module
 
 AUTO_BOOT:
         LD      HL,MSG_AUTOBOOT
@@ -886,6 +915,7 @@ IDE_WRITE8:                             ; E=register, D=data
 ;=============================================================================
 PRINT_BANNER:
         CALL    PRINT_CRLF
+        CALL    EXT_HEADER              ; aligned IMSAI 8080 front-panel art
         LD      HL,MSG_BANNER
         CALL    PRINT_STR
         LD      HL,MSG_PANEL
@@ -938,16 +968,19 @@ MSG_FAIL:
 MSG_MISMATCH:
         DB      CR,LF,'MISMATCH ',0
 
+; Compact command legend keeps the F000H-F7FFH core below F800H.  The A/E/S/Z
+; implementations themselves live in the FBA0H monitor extension.
 MSG_MENU1:
-        DB      'B=Boot C=FDC+ D=Display F=Fill G=Goto H=Hardware J=RAMtest',CR,LF,0
+        DB      'A Map B Boot C FDC D Disp E Echo F Fill G Go H HW J Test',CR,LF,0
 MSG_MENU2:
-        DB      'K=Menu M=Move P=IDE/CF Q=I/O T=Type V=Verify',CR,LF
-        DB      'Syntax: D/F/J/T start,end  M/V start,end,dest  Q I,port  Q O,port,byte',0
+        DB      'K Menu M Move P IDE Q I/O S Sub V Verify Z RAMtop',CR,LF
+        DB      'Hex params: SPACE or comma. D/F/J a,b  M/V a,b,c  S a',CR,LF
+        DB      'Q I,p  Q O,p,v',0
 
 MSG_BOOT_MENU:
         DB      'BOOT: [I] IDE/CF  [F] ALTAIR FDC+  [M] MONITOR : ',0
 MSG_FDC_BOOT:
-        DB      'BOOTING ALTAIR FDC+ WITH CDBL...',CR,LF,0
+        DB      'BOOTING ALTAIR FDC+ WITH 3712...',CR,LF,0
 MSG_IDE_BOOT:
         DB      'BOOTING CP/M FROM IDE/CF...',CR,LF,0
 MSG_IDE_NOT_READY:
@@ -964,6 +997,6 @@ MSG_HW2:
         DB      '  CONSOLE=',0
 MSG_HW3:
         DB      'RAM 0000H-EFFFH  ROM F000H-FFFFH',CR,LF
-        DB      'IDE/CF 30H-34H  FDC+ 08H-0AH  CDBL FF00H',CR,LF,0
+        DB      'IDE/CF 30H-34H  FDC+ 08H-0AH  3712 F800H',CR,LF,0
 
-; tools/build_image.py enforces that the assembled body ends before FF00H.
+; tools/build_image.py enforces that the assembled body ends before F800H.
